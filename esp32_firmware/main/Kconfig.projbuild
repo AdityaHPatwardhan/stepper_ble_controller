@@ -1,0 +1,53 @@
+menu "Stepper BLE Controller Configuration"
+
+    config STEPPER_PULSE_GPIO
+        int "Stepper pulse output GPIO"
+        default 4
+        help
+            GPIO pin for PWM pulse output to stepper driver.
+
+    config STEPPER_PEDAL_GPIO
+        int "Pedal input GPIO"
+        default 5
+        help
+            GPIO pin for pedal input (HIGH when pressed).
+
+    config STEPPER_COUNTER_GPIO
+        int "Counter input GPIO"
+        default 6
+        help
+            GPIO pin for counter input (HIGH when count complete).
+
+    config STEPPER_DEFAULT_FREQ
+        int "Default pulse frequency (Hz)"
+        default 500
+        range 100 1000
+        help
+            Default PWM frequency for stepper pulses.
+
+    config STEPPER_MIN_FREQ
+        int "Minimum pulse frequency (Hz)"
+        default 100
+        help
+            Minimum allowed PWM frequency.
+
+    config STEPPER_MAX_FREQ
+        int "Maximum pulse frequency (Hz)"
+        default 1000
+        help
+            Maximum allowed PWM frequency.
+
+    config BLE_DEVICE_NAME
+        string "BLE Device Name"
+        default "StepperCtrl"
+        help
+            Bluetooth device name for advertising.
+
+    config STATUS_UPDATE_INTERVAL_MS
+        int "BLE status update interval (ms)"
+        default 50
+        range 10 1000
+        help
+            Interval for sending status notifications over BLE.
+
+endmenu

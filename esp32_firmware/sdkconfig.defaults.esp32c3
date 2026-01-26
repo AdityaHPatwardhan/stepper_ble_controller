@@ -1,0 +1,2 @@
+# ESP32-C3 specific config
+CONFIG_IDF_TARGET="esp32c3"
