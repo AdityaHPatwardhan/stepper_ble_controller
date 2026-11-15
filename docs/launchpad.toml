@@ -1,0 +1,14 @@
+# ESP Launchpad configuration for the Stepper BLE Controller firmware.
+# Open: https://espressif.github.io/esp-launchpad/?flashConfigURL=https://adityahpatwardhan.github.io/stepper_ble_controller/launchpad.toml
+esp_toml_version = 1.0
+
+firmware_images_url = "https://adityahpatwardhan.github.io/stepper_ble_controller/firmware/"
+
+supported_apps = ["stepper_ble_controller"]
+
+[stepper_ble_controller]
+chipsets = ["ESP32-S3"]
+# Single merged image (bootloader + partition table + app), flashed at 0x0.
+image.esp32-s3 = "stepper_ble_controller_esp32s3.bin"
+description = "BLE-controlled stepper pulse generator: pedal and counter inputs, pulse output on GPIO 4, advertises as StepperCtrl."
+console_baudrate = 115200

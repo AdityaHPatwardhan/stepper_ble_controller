@@ -9,12 +9,31 @@ This project allows you to control a stepper motor via Bluetooth Low Energy (BLE
 - **ESP32 Firmware**: Runs on ESP32-C3 or ESP32-S3, handles motor control logic and BLE communication
 - **Flutter App**: Cross-platform mobile app (iOS/Android) for remote control and monitoring
 
+## Flash the firmware from your browser (ESP32-S3)
+
+<a href="https://espressif.github.io/esp-launchpad/?flashConfigURL=https://adityahpatwardhan.github.io/stepper_ble_controller/launchpad.toml">
+    <img alt="Try it with ESP Launchpad" src="https://espressif.github.io/esp-launchpad/assets/try_with_launchpad.png" width="250" height="70">
+</a>
+
+No toolchain needed. Connect the ESP32-S3 board by USB, open the link above in Chrome or Edge on a computer, click **Connect**, pick the serial port, then **Flash**.
+
+Direct link: <https://espressif.github.io/esp-launchpad/?flashConfigURL=https://adityahpatwardhan.github.io/stepper_ble_controller/launchpad.toml>
+
+The image is `docs/firmware/stepper_ble_controller_esp32s3.bin`, built for ESP32-S3 with the default pins (GPIO 4, 5, 6). To refresh it after a firmware change:
+
+```bash
+cd esp32_firmware
+idf.py set-target esp32s3
+idf.py build merge-bin
+cp build/merged-binary.bin ../docs/firmware/stepper_ble_controller_esp32s3.bin
+```
+
 ## Visual explainer
 
 `docs/index.html` is an interactive page that explains the project visually: what a pulse is, pulse rate, duty cycle, how the ESP32 generates the pulses, the control logic (with a slow-motion simulator), the BLE protocol, and what driving an industrial servo would need.
 
 - Open it locally: double-click `docs/index.html`; it has no dependencies.
-- Publish it with GitHub Pages: Settings → Pages → Deploy from a branch → `/docs` folder.
+- Online: <https://adityahpatwardhan.github.io/stepper_ble_controller/> (GitHub Pages, served from the `/docs` folder).
 
 ## Features
 
@@ -80,7 +99,7 @@ else:
 
 ### Prerequisites
 
-- ESP-IDF v5.0 or later (tested with v6.0)
+- ESP-IDF v5.0 or later (built with v6.1)
 - ESP32-C3 or ESP32-S3 development board
 
 ### Build Instructions
