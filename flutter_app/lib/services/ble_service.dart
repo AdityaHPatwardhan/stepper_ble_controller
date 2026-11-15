@@ -29,10 +29,7 @@ class BleService {
   Stream<List<ScanResult>> get scanResults => FlutterBluePlus.scanResults;
 
   Future<void> startScan({Duration timeout = const Duration(seconds: 10)}) async {
-    await FlutterBluePlus.startScan(
-      timeout: timeout,
-      androidUsesFineLocation: true,
-    );
+    await FlutterBluePlus.startScan(timeout: timeout);
   }
 
   Future<void> stopScan() async {
@@ -43,14 +40,18 @@ class BleService {
     try {
       _device = device;
 
+      await device.connect(timeout: const Duration(seconds: 10));
+
+      // Subscribe only after connecting: connectionState replays the current
+      // state on listen, and a replayed "disconnected" would tear this
+      // subscription down before the link is up.
       _connectionSubscription = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
+          _device = null;
           deviceState.setConnected(false);
           _cleanup();
         }
       });
-
-      await device.connect(timeout: const Duration(seconds: 10));
 
       List<BluetoothService> services = await device.discoverServices();
 

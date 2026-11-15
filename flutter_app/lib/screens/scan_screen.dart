@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:provider/provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../services/ble_service.dart';
 import 'control_screen.dart';
 
@@ -23,40 +22,21 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   void initState() {
     super.initState();
-    _checkPermissions();
+    // Bluetooth permissions are requested by flutter_blue_plus when the first
+    // scan starts (Android), or by the system on first Bluetooth use (iOS).
     _setupScanListeners();
-  }
-
-  Future<void> _checkPermissions() async {
-    Map<Permission, PermissionStatus> statuses = await [
-      Permission.bluetooth,
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.location,
-    ].request();
-
-    bool allGranted = statuses.values.every(
-      (status) => status.isGranted || status.isLimited,
-    );
-
-    if (!allGranted && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Bluetooth permissions required'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
   }
 
   void _setupScanListeners() {
     _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
+      if (!mounted) return;
       setState(() {
         _scanResults = results;
       });
     });
 
     _scanningSubscription = FlutterBluePlus.isScanning.listen((scanning) {
+      if (!mounted) return;
       setState(() {
         _isScanning = scanning;
       });
@@ -77,10 +57,7 @@ class _ScanScreenState extends State<ScanScreen> {
     });
 
     try {
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 10),
-        androidUsesFineLocation: true,
-      );
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -108,6 +85,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
     bool connected = await bleService.connect(device);
 
+    if (!mounted) return;
     setState(() {
       _connectingDeviceId = null;
     });

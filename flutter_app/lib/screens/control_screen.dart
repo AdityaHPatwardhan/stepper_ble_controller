@@ -15,6 +15,7 @@ class ControlScreen extends StatefulWidget {
 
 class _ControlScreenState extends State<ControlScreen> {
   double _frequencySlider = 500;
+  bool _leaving = false;
 
   @override
   void initState() {
@@ -45,22 +46,20 @@ class _ControlScreenState extends State<ControlScreen> {
   }
 
   Future<void> _disconnect() async {
+    // Navigation back to the scan screen happens in build(), which reacts to
+    // the connection state for both manual and unexpected disconnects.
     final bleService = context.read<BleService>();
     await bleService.disconnect();
-
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const ScanScreen()),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<DeviceState>(
       builder: (context, deviceState, child) {
-        if (!deviceState.isConnected) {
+        if (!deviceState.isConnected && !_leaving) {
+          _leaving = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(builder: (context) => const ScanScreen()),
             );
