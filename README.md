@@ -9,6 +9,13 @@ This project allows you to control a stepper motor via Bluetooth Low Energy (BLE
 - **ESP32 Firmware**: Runs on ESP32-C3 or ESP32-S3, handles motor control logic and BLE communication
 - **Flutter App**: Cross-platform mobile app (iOS/Android) for remote control and monitoring
 
+## Visual explainer
+
+`docs/index.html` is an interactive page that explains the project visually: what a pulse is, pulse rate, duty cycle, how the ESP32 generates the pulses, the control logic (with a slow-motion simulator), the BLE protocol, and what driving an industrial servo would need.
+
+- Open it locally: double-click `docs/index.html`; it has no dependencies.
+- Publish it with GitHub Pages: Settings → Pages → Deploy from a branch → `/docs` folder.
+
 ## Features
 
 - Real-time status monitoring (pedal, counter, motor state)

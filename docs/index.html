@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stepper BLE Controller: how it works</title>
+<meta name="description" content="A visual explanation of the Stepper BLE Controller: pulses, pulse rate, duty cycle, the control logic and the BLE protocol.">
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #16202b; --muted: #5b6875; --line: #dde2e8;
+  --signal: #0b8f83; --signal-soft: #d6f1ee; --mark: #c26a00; --mark-soft: #fdeed8;
+  --stop: #c0392b; --stop-soft: #fbe3e0; --go: #1e8e4e; --go-soft: #dcf3e5;
+  --code: #eef1f4; --grid: #e9edf1;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1419; --panel: #171e26; --ink: #e6ebf0; --muted: #9aa7b4; --line: #2a343f;
+    --signal: #3fd0c1; --signal-soft: #12332f; --mark: #f0a84a; --mark-soft: #3a2a12;
+    --stop: #ff7b6b; --stop-soft: #3b1b17; --go: #5fd08a; --go-soft: #14311f;
+    --code: #1f2831; --grid: #222c36;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+main, header, nav { max-width: 880px; margin: 0 auto; padding: 0 16px; }
+header { padding-top: 40px; }
+h1 { font-size: clamp(1.7rem, 4.5vw, 2.4rem); line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+h2 { font-size: 1.4rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+h3 { font-size: 1rem; margin: 20px 0 6px; }
+p { margin: 8px 0; }
+.lede { color: var(--muted); font-size: 1.08rem; max-width: 62ch; }
+.num { font-size: .8rem; font-weight: 700; color: var(--signal); letter-spacing: .08em; text-transform: uppercase; }
+nav { margin-top: 20px; }
+nav ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+nav a { display: block; padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px;
+  color: var(--ink); text-decoration: none; font-size: .86rem; background: var(--panel); }
+nav a:hover { border-color: var(--signal); color: var(--signal); }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px; margin: 22px 0; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
+.scope { width: 100%; height: auto; display: block; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; margin: 12px 0 6px; }
+.scope .sig { fill: none; stroke: var(--signal); stroke-width: 2.5; stroke-linejoin: round; }
+.scope .grid { stroke: var(--grid); stroke-width: 1; }
+.scope .ann { stroke: var(--mark); stroke-width: 1.5; fill: none; }
+.scope text { font: 12px ui-monospace, Menlo, Consolas, monospace; fill: var(--muted); }
+.scope text.annt { fill: var(--mark); font-weight: 600; }
+.scope .saw { fill: none; stroke: var(--muted); stroke-width: 2; }
+.scope .cmp { stroke: var(--mark); stroke-width: 2; stroke-dasharray: 6 4; }
+.scope .fillhi { fill: var(--signal-soft); }
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 10px 0; }
+.ctl label { font-weight: 600; font-size: .92rem; }
+input[type=range] { flex: 1 1 220px; min-width: 160px; accent-color: var(--signal); }
+input[type=number], select { font: inherit; padding: 5px 8px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--bg); color: var(--ink); width: 9em; }
+.val { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; min-width: 5.5em; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.stat { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.stat b { display: block; font: 700 1.25rem ui-monospace, Menlo, Consolas, monospace; }
+.stat span { color: var(--muted); font-size: .82rem; }
+.note { border-left: 3px solid var(--mark); background: var(--mark-soft); padding: 9px 13px;
+  border-radius: 0 8px 8px 0; margin: 12px 0; font-size: .94rem; }
+.warn { border-left-color: var(--stop); background: var(--stop-soft); }
+button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+button:hover { border-color: var(--signal); }
+button code { background: transparent; padding: 0; }
+button[aria-pressed=true] { background: var(--signal); border-color: var(--signal); color: #fff; }
+@media (prefers-color-scheme: dark) { button[aria-pressed=true] { color: #06231f; } }
+#pedal { padding: 14px 22px; user-select: none; -webkit-user-select: none; touch-action: none; }
+.sim { display: grid; grid-template-columns: 1fr 150px; gap: 14px; align-items: center; }
+@media (max-width: 600px) { .sim { grid-template-columns: 1fr; } .sim .rotor { max-width: 150px; margin: 0 auto; } }
+.rotor circle.body { fill: var(--bg); stroke: var(--line); stroke-width: 2; }
+.rotor line.hand { stroke: var(--signal); stroke-width: 5; stroke-linecap: round; }
+.rotor .tick { stroke: var(--line); stroke-width: 1; }
+.pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: .85rem; }
+.pill.on { background: var(--go-soft); color: var(--go); }
+.pill.off { background: var(--stop-soft); color: var(--stop); }
+.wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .93rem; margin: 10px 0; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; }
+td.r, th.r { text-align: right; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.bits { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0; }
+.bit { width: 62px; text-align: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px 2px;
+  background: var(--bg); font-size: .7rem; color: var(--muted); }
+.bit b { display: block; font: 700 1.2rem ui-monospace, Menlo, Consolas, monospace; color: var(--ink); }
+.bit.set { background: var(--signal-soft); border-color: var(--signal); }
+.bit.set b { color: var(--signal); }
+.bar { height: 16px; border-radius: 4px; background: var(--signal); min-width: 3px; }
+.barcell { width: 45%; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0; }
+.box { border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--bg);
+  font-size: .88rem; text-align: center; }
+.box b { display: block; }
+.box.core { border-color: var(--signal); background: var(--signal-soft); }
+.arrow { color: var(--muted); font-weight: 700; }
+.verdict { font-weight: 700; }
+.ok { color: var(--go); } .bad { color: var(--stop); }
+footer { max-width: 880px; margin: 0 auto; padding: 8px 16px 48px; color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="num">Stepper BLE Controller</div>
+  <h1>How a foot pedal, an ESP32 and a phone turn a motor</h1>
+  <p class="lede">An ESP32 sends a stream of electrical pulses to a motor driver. Each pulse moves the motor one small step. This page shows what those pulses look like, what "pulse rate" and "duty cycle" mean, and how the firmware decides when to send them.</p>
+</header>
+
+<nav aria-label="Sections">
+  <ol>
+    <li><a href="#system">1 The system</a></li>
+    <li><a href="#pulse">2 Pulses</a></li>
+    <li><a href="#rate">3 Pulse rate</a></li>
+    <li><a href="#duty">4 Duty cycle</a></li>
+    <li><a href="#ledc">5 How the ESP32 makes them</a></li>
+    <li><a href="#logic">6 Try it</a></li>
+    <li><a href="#ble">7 BLE protocol</a></li>
+    <li><a href="#max">8 Speed limits</a></li>
+    <li><a href="#servo">9 Driving a servo</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="system">
+  <div class="num">1 · The system</div>
+  <h2>Who talks to whom</h2>
+  <div class="flow" role="img" aria-label="Pedal and counter feed the ESP32, which pulses the driver, which turns the motor. A phone connects over BLE.">
+    <div>
+      <div class="box"><b>Foot pedal</b>GPIO 5 · HIGH = pressed</div>
+      <div style="height:8px"></div>
+      <div class="box"><b>Counter</b>GPIO 6 · HIGH = done</div>
+    </div>
+    <span class="arrow">→</span>
+    <div class="box core"><b>ESP32-C3 / S3</b>decides run or stop<br>every 50 ms</div>
+    <span class="arrow">→ pulses →</span>
+    <div class="box"><b>Motor driver</b>STEP input · GPIO 4</div>
+    <span class="arrow">→</span>
+    <div class="box"><b>Motor</b></div>
+  </div>
+  <div class="flow">
+    <div class="box"><b>Phone app</b>Flutter</div>
+    <span class="arrow">⇄ Bluetooth LE ⇄</span>
+    <div class="box core"><b>ESP32</b>advertises as "StepperCtrl"</div>
+  </div>
+  <p>The ESP32 does not power the motor. It only tells the driver <em>when to step</em>. The driver supplies the current. The phone is optional: the pedal and counter work without it.</p>
+</section>
+
+<section id="pulse">
+  <div class="num">2 · Pulses</div>
+  <h2>One pulse, one step</h2>
+  <p>A pulse is the signal going from LOW (0 V) to HIGH (3.3 V) and back. The driver watches for the <strong>rising edge</strong>, the moment the signal jumps up, and moves the motor one step each time it sees one.</p>
+  <svg class="scope" viewBox="0 0 600 150" role="img" aria-label="A square wave with the rising edges marked as steps">
+    <line class="grid" x1="0" y1="110" x2="600" y2="110"/><line class="grid" x1="0" y1="35" x2="600" y2="35"/>
+    <path class="sig" d="M0,110 L60,110 L60,35 L140,35 L140,110 L220,110 L220,35 L300,35 L300,110 L380,110 L380,35 L460,35 L460,110 L540,110 L540,35 L600,35"/>
+    <text x="6" y="28">3.3 V</text><text x="6" y="128">0 V</text>
+    <g class="ann"><path d="M60,140 L60,116 M55,122 L60,116 L65,122"/><path d="M220,140 L220,116 M215,122 L220,116 L225,122"/><path d="M380,140 L380,116 M375,122 L380,116 L385,122"/><path d="M540,140 L540,116 M535,122 L540,116 L545,122"/></g>
+    <text class="annt" x="68" y="143">step 1</text><text class="annt" x="228" y="143">step 2</text><text class="annt" x="388" y="143">step 3</text><text class="annt" x="548" y="143">step 4</text>
+  </svg>
+  <p>A common stepper motor needs 200 steps for one full turn, so each step is 1.8°. To turn the motor faster, send the pulses closer together.</p>
+</section>
+
+<section id="rate">
+  <div class="num">3 · Pulse rate</div>
+  <h2>Pulse rate (frequency) sets the speed</h2>
+  <p>Pulse rate is the number of pulses per second, measured in hertz (Hz). 500 Hz means 500 pulses, so 500 steps, every second. This firmware allows 100 to 1000 Hz and starts at 500 Hz.</p>
+  <div class="ctl">
+    <label for="freq1">Pulse rate</label>
+    <input type="range" id="freq1" class="freq-in" min="100" max="1000" step="50" value="500">
+    <span class="val"><span class="freq-out">500</span> Hz</span>
+  </div>
+  <svg class="scope" id="rateScope" viewBox="0 0 600 150" role="img" aria-label="Waveform at the chosen pulse rate over a 20 millisecond window"></svg>
+  <p style="color:var(--muted);font-size:.85rem;margin-top:0">The window is always 20 ms wide. Move the slider and count how many pulses fit.</p>
+  <div class="stats">
+    <div class="stat"><b id="sPeriod">2.00 ms</b><span>period (one full pulse)</span></div>
+    <div class="stat"><b id="sSteps">500</b><span>steps per second</span></div>
+    <div class="stat"><b id="sRpm">150 RPM</b><span>motor speed</span></div>
+  </div>
+  <div class="ctl">
+    <label for="spr">Steps per revolution</label>
+    <select id="spr">
+      <option value="200" selected>200 (full step)</option>
+      <option value="400">400 (half step)</option>
+      <option value="1600">1600 (1/8 microstep)</option>
+      <option value="3200">3200 (1/16 microstep)</option>
+    </select>
+  </div>
+  <div class="note"><strong>period = 1 ÷ frequency</strong> and <strong>RPM = frequency × 60 ÷ steps per revolution</strong>. The steps-per-revolution figure depends on the motor and on the microstep switches on the driver, so check the real hardware.</div>
+</section>
+
+<section id="duty">
+  <div class="num">4 · Duty cycle</div>
+  <h2>Duty cycle is how long each pulse stays HIGH</h2>
+  <p>Duty cycle is the share of each period that the signal is HIGH, as a percentage. At 50% the signal is HIGH for half the period and LOW for the other half.</p>
+  <div class="ctl">
+    <label for="dutyIn">Duty cycle</label>
+    <input type="range" id="dutyIn" min="0" max="100" step="5" value="50">
+    <span class="val"><span id="dutyOut">50</span> %</span>
+  </div>
+  <svg class="scope" id="dutyScope" viewBox="0 0 600 150" role="img" aria-label="Waveform at the chosen duty cycle"></svg>
+  <div class="stats">
+    <div class="stat"><b id="dHigh">1.00 ms</b><span>HIGH time per pulse</span></div>
+    <div class="stat"><b id="dLow">1.00 ms</b><span>LOW time per pulse</span></div>
+    <div class="stat"><b id="dEdges">500</b><span>rising edges per second</span></div>
+  </div>
+  <div class="note"><strong>Duty cycle does not change the motor speed.</strong> Slide it between 5% and 95%: the rising edges stay in the same places, so the step count is the same. Only at 0% (always LOW) or 100% (always HIGH) do the edges disappear and the motor stops.</div>
+  <p>This firmware uses exactly two duty values: <code>512</code> out of 1024 (50%) to run, and <code>0</code> (0%) to stop. The driver only needs each pulse to be a few microseconds wide, and 50% gives 0.5 to 5 ms, so there is a wide margin.</p>
+</section>
+
+<section id="ledc">
+  <div class="num">5 · Inside the ESP32</div>
+  <h2>A counter and a comparison make the pulses</h2>
+  <p>The pulses come from a hardware block called LEDC. Software does not toggle the pin, so Bluetooth activity cannot disturb the timing. LEDC has two parts:</p>
+  <p><strong>A counter</strong> that climbs from 0 to 1023 and starts again, over and over. One full climb is one period. <strong>A compare value</strong> (the "duty" value). The pin is HIGH while the counter is below it and LOW once the counter passes it.</p>
+  <div class="ctl">
+    <label for="cmpIn">Duty value</label>
+    <input type="range" id="cmpIn" min="0" max="1023" step="1" value="512">
+    <span class="val" id="cmpOut">512</span>
+    <button type="button" id="cmpRun">Run (512)</button>
+    <button type="button" id="cmpStop">Stop (0)</button>
+  </div>
+  <svg class="scope" id="ledcScope" viewBox="0 0 600 260" role="img" aria-label="Sawtooth counter with a compare line, and the resulting output pulse below it"></svg>
+  <table>
+    <tr><th>To change…</th><th>The firmware changes…</th><th>Function</th></tr>
+    <tr><td>Running or stopped</td><td>The duty value: 512 or 0</td><td><code>motor_start()</code>, <code>motor_stop()</code></td></tr>
+    <tr><td>Motor speed</td><td>How fast the counter climbs</td><td><code>motor_set_frequency()</code></td></tr>
+  </table>
+  <p style="color:var(--muted);font-size:.9rem">Source: <code>esp32_firmware/main/motor_control.c</code>. Timer resolution is 10 bits, which is where 1024 comes from.</p>
+</section>
+
+<section id="logic">
+  <div class="num">6 · Try it</div>
+  <h2>The control logic, in slow motion</h2>
+  <p>Hold the pedal and watch the pulses and the motor. Then switch the counter to "complete". Time is slowed 100×, so a 500 Hz pulse train shows as 5 steps per second.</p>
+  <div class="ctl">
+    <button type="button" id="pedal" aria-pressed="false">Hold pedal</button>
+    <button type="button" id="counter" aria-pressed="false">Counter complete</button>
+    <span>Motor: <span class="pill off" id="motorPill">STOPPED</span></span>
+    <span>Steps: <span class="val" id="stepCount">0</span></span>
+  </div>
+  <div class="ctl">
+    <span style="font-weight:600;font-size:.92rem">Mode (set from the phone)</span>
+    <button type="button" class="mode" data-mode="auto" aria-pressed="true">Auto <code>0x02</code></button>
+    <button type="button" class="mode" data-mode="on" aria-pressed="false">Start <code>0x01</code></button>
+    <button type="button" class="mode" data-mode="off" aria-pressed="false">Stop <code>0x00</code></button>
+  </div>
+  <div class="ctl">
+    <label for="freq2">Pulse rate</label>
+    <input type="range" id="freq2" class="freq-in" min="100" max="1000" step="50" value="500">
+    <span class="val"><span class="freq-out">500</span> Hz</span>
+  </div>
+  <div class="sim">
+    <svg class="scope" id="simScope" viewBox="0 0 600 130" role="img" aria-label="Live pulse output"></svg>
+    <svg class="rotor" viewBox="0 0 120 120" role="img" aria-label="Motor shaft position">
+      <circle class="body" cx="60" cy="60" r="54"/>
+      <g id="ticks"></g>
+      <line class="hand" id="hand" x1="60" y1="60" x2="60" y2="14"/>
+      <circle cx="60" cy="60" r="6" fill="currentColor"/>
+    </svg>
+  </div>
+  <div class="wrap">
+  <table>
+    <tr><th>Mode</th><th>Counter</th><th>Pedal</th><th>Motor</th></tr>
+    <tr><td>Auto</td><td>complete</td><td>any</td><td>stopped</td></tr>
+    <tr><td>Auto</td><td>not complete</td><td>pressed</td><td><strong>runs</strong></td></tr>
+    <tr><td>Auto</td><td>not complete</td><td>released</td><td>stopped</td></tr>
+    <tr><td>Start (manual on)</td><td>not complete</td><td>any</td><td><strong>runs</strong></td></tr>
+    <tr><td>Start (manual on)</td><td>complete</td><td>any</td><td>stopped</td></tr>
+    <tr><td>Stop (manual off)</td><td>any</td><td>any</td><td>stopped</td></tr>
+  </table>
+  </div>
+  <p>The counter always wins: once it reports "complete", nothing can run the motor. If the phone disconnects, the firmware returns to Auto, so the motor cannot be left forced on.</p>
+  <div class="note"><strong>Reaction time.</strong> The firmware checks the pedal and counter every 50 ms. In the worst case the motor keeps stepping for 50 ms after the counter completes: at <span class="freq-out">500</span> Hz that is up to <strong id="overrun">25</strong> extra steps.</div>
+</section>
+
+<section id="ble">
+  <div class="num">7 · BLE protocol</div>
+  <h2>What travels between the phone and the ESP32</h2>
+  <p>The ESP32 offers one Bluetooth LE service with three values ("characteristics"). The examples below follow the simulator in section 6.</p>
+
+  <h3>Status: ESP32 → phone, every 50 ms, 1 byte</h3>
+  <div class="bits" id="statusBits"></div>
+  <p>Status byte now: <code id="statusHex">0x00</code></p>
+
+  <h3>Command: phone → ESP32, 1 byte</h3>
+  <table>
+    <tr><th>Byte</th><th>Meaning</th></tr>
+    <tr><td><code>0x00</code></td><td>Stop: motor forced off, pedal ignored</td></tr>
+    <tr><td><code>0x01</code></td><td>Start: motor forced on until the counter completes</td></tr>
+    <tr><td><code>0x02</code></td><td>Auto: pedal controls the motor</td></tr>
+  </table>
+  <p>The app's press-and-hold button sends <code>0x01</code> on press and <code>0x02</code> on release.</p>
+
+  <h3>Frequency: phone ⇄ ESP32, 2 bytes, low byte first</h3>
+  <p><span class="freq-out">500</span> Hz is sent as <code id="freqBytes">F4 01</code> &nbsp;(<span id="freqMath" class="mono">0x01F4 = 500</span>)</p>
+
+  <div class="wrap">
+  <table>
+    <tr><th>Item</th><th>UUID</th><th>Access</th></tr>
+    <tr><td>Service</td><td class="mono">12345678-1234-5678-1234-56789abcdef0</td><td></td></tr>
+    <tr><td>Status</td><td class="mono">…def1</td><td>read, notify</td></tr>
+    <tr><td>Command</td><td class="mono">…def2</td><td>write</td></tr>
+    <tr><td>Frequency</td><td class="mono">…def3</td><td>read, write</td></tr>
+  </table>
+  </div>
+  <div class="note warn">The link has no pairing or encryption. Any phone in range that knows these UUIDs can command the motor.</div>
+</section>
+
+<section id="max">
+  <div class="num">8 · Speed limits</div>
+  <h2>How fast could the ESP32 pulse?</h2>
+  <p>The 1000 Hz ceiling is a setting in this firmware, not a limit of the chip. The chip's limit follows from the counter in section 5: a counter with more steps takes longer to complete one climb.</p>
+  <div class="note"><strong>maximum frequency = clock ÷ 2<sup>resolution bits</sup></strong>, with an 80 MHz clock.</div>
+  <div class="wrap">
+  <table id="maxTable">
+    <tr><th>Counter resolution</th><th class="r">Max pulse rate</th><th class="barcell">Log scale</th></tr>
+  </table>
+  </div>
+  <p>A stepper or servo input only needs a 50% pulse, so the resolution can be lowered to reach higher rates. In practice the driver and the motor set the limit long before the ESP32 does.</p>
+</section>
+
+<section id="servo">
+  <div class="num">9 · Driving a servo</div>
+  <h2>Is this pulse rate enough for an industrial servo?</h2>
+  <p>Many industrial servo drives accept the same kind of pulse train ("pulse and direction" position mode). The difference is resolution: a stepper needs 200 pulses per turn, while a servo drive typically expects thousands. The exact number is a drive parameter, usually called the electronic gear ratio.</p>
+  <div class="ctl">
+    <label for="ppr">Pulses per motor revolution</label>
+    <input type="number" id="ppr" min="100" max="10000000" step="100" value="10000">
+    <label for="rpm">Speed you need (RPM)</label>
+    <input type="number" id="rpm" min="1" max="10000" step="50" value="3000">
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="needHz">500 kHz</b><span>pulse rate needed</span></div>
+    <div class="stat"><b id="at1k">6 RPM</b><span>speed at today's 1000 Hz limit</span></div>
+  </div>
+  <div class="wrap">
+  <table>
+    <tr><th>Limit</th><th class="r">Pulse rate</th><th class="r">Speed it allows</th><th>Enough?</th></tr>
+    <tbody id="servoRows"></tbody>
+  </table>
+  </div>
+  <p id="servoVerdict" class="verdict"></p>
+  <h3>What else a servo drive needs that this firmware does not provide</h3>
+  <table>
+    <tr><th>Need</th><th>Why</th></tr>
+    <tr><td>Signal level</td><td>Servo pulse inputs are usually 5 V differential (line driver) or 24 V open-collector, through opto-isolators. A 3.3 V ESP32 pin needs a line-driver chip or a transistor stage in between.</td></tr>
+    <tr><td>Direction signal</td><td>The firmware has one output, so the motor can only turn one way.</td></tr>
+    <tr><td>Servo-on (enable)</td><td>Most drives will not move until an enable input is active.</td></tr>
+    <tr><td>Acceleration ramp</td><td>The firmware jumps straight to full pulse rate. A servo commanded this way can trip a "position error too large" alarm, unless the drive's own command smoothing is switched on.</td></tr>
+    <tr><td>Alarm and ready signals</td><td>The firmware does not read the drive's alarm output, so it would keep pulsing into a faulted drive.</td></tr>
+  </table>
+  <div class="note">The drive limits in the table are typical values for common industrial drives, not figures for a specific model. Confirm the control mode, the pulses per revolution and the maximum input frequency in the manual of the actual drive.</div>
+</section>
+
+</main>
+<footer>Stepper BLE Controller · firmware in <code>esp32_firmware/</code>, phone app in <code>flutter_app/</code>.</footer>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var HI = 35, LO = 110, W = 600;
+  var state = { freq: 500, duty: 50, pedal: false, counter: false, mode: 'auto' };
+
+  function fmtMs(ms) { return (ms >= 10 ? ms.toFixed(1) : ms.toFixed(2)) + ' ms'; }
+  function fmtHz(hz) {
+    if (hz >= 1e6) return +(hz / 1e6).toFixed(2) + ' MHz';
+    if (hz >= 1e3) return +(hz / 1e3).toFixed(hz >= 1e5 ? 0 : 1) + ' kHz';
+    return Math.round(hz) + ' Hz';
+  }
+  function fmtRpm(r) { return (r >= 100 ? Math.round(r) : r >= 10 ? r.toFixed(1) : r.toFixed(2)) + ' RPM'; }
+
+  // Square wave path over a fixed time window.
+  function wavePath(freq, duty, windowMs) {
+    var P = W * (1000 / freq) / windowMs, d = duty / 100, pts = [], prev = LO;
+    for (var x0 = 0; x0 < W + 1; x0 += P) {
+      var a = d > 0 ? HI : LO, b = d < 1 ? LO : HI;
+      pts.push([x0, prev], [x0, a], [x0 + d * P, a], [x0 + d * P, b]);
+      prev = b;
+    }
+    pts.push([W, prev]);
+    return 'M' + pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1]; }).join(' L');
+  }
+  var GRID = '<line class="grid" x1="0" y1="' + LO + '" x2="600" y2="' + LO + '"/><line class="grid" x1="0" y1="' + HI + '" x2="600" y2="' + HI + '"/>';
+  function bracket(x1, x2, y, label) {
+    var mid = (x1 + x2) / 2, anchor = mid > 500 ? 'end' : mid < 60 ? 'start' : 'middle';
+    return '<path class="ann" d="M' + x1 + ',' + (y - 4) + ' L' + x1 + ',' + (y + 4) + ' M' + x1 + ',' + y + ' L' + x2 + ',' + y + ' M' + x2 + ',' + (y - 4) + ' L' + x2 + ',' + (y + 4) + '"/>' +
+      '<text class="annt" text-anchor="' + anchor + '" x="' + mid + '" y="' + (y + 16) + '">' + label + '</text>';
+  }
+
+  function drawRate() {
+    var f = state.freq, P = W * (1000 / f) / 20;
+    $('rateScope').innerHTML = GRID + '<path class="sig" d="' + wavePath(f, 50, 20) + '"/>' +
+      bracket(0, P, 124, 'period ' + fmtMs(1000 / f)) +
+      '<text x="594" y="20" text-anchor="end">20 ms window</text>';
+    var spr = +$('spr').value;
+    $('sPeriod').textContent = fmtMs(1000 / f);
+    $('sSteps').textContent = f;
+    $('sRpm').textContent = fmtRpm(f * 60 / spr);
+  }
+
+  function drawDuty() {
+    var f = state.freq, d = state.duty, win = 4 * 1000 / f, P = W / 4, per = 1000 / f;
+    var svg = GRID + '<path class="sig" d="' + wavePath(f, d, win) + '"/>';
+    if (d > 0 && d < 100) svg += bracket(0, P * d / 100, 124, 'HIGH ' + fmtMs(per * d / 100));
+    svg += '<text x="594" y="20" text-anchor="end">4 periods at ' + f + ' Hz</text>';
+    $('dutyScope').innerHTML = svg;
+    $('dutyOut').textContent = d;
+    $('dHigh').textContent = fmtMs(per * d / 100);
+    $('dLow').textContent = fmtMs(per * (100 - d) / 100);
+    $('dEdges').textContent = (d > 0 && d < 100) ? f : 0;
+  }
+
+  function drawLedc() {
+    var c = +$('cmpIn').value, top = 20, bot = 150, n = 3, P = W / n;
+    var y = function (v) { return bot - (v / 1023) * (bot - top); };
+    var saw = 'M0,' + bot, out = 'M0,' + (c > 0 ? 190 : 240), fills = '';
+    for (var k = 0; k < n; k++) {
+      var x0 = k * P, xc = x0 + P * c / 1024;
+      saw += ' L' + (x0 + P) + ',' + top + ' L' + (x0 + P) + ',' + bot;
+      if (c > 0) {
+        out += ' L' + x0 + ',190 L' + xc.toFixed(1) + ',190 L' + xc.toFixed(1) + ',240 L' + (x0 + P) + ',240' + (k < n - 1 ? ' L' + (x0 + P) + ',190' : '');
+        fills += '<rect class="fillhi" x="' + x0 + '" y="' + top + '" width="' + (xc - x0).toFixed(1) + '" height="' + (bot - top) + '"/>';
+      } else {
+        out += ' L' + (x0 + P) + ',240';
+      }
+    }
+    $('ledcScope').innerHTML = fills +
+      '<line class="grid" x1="0" y1="' + bot + '" x2="600" y2="' + bot + '"/><line class="grid" x1="0" y1="' + top + '" x2="600" y2="' + top + '"/>' +
+      '<line class="grid" x1="0" y1="240" x2="600" y2="240"/><line class="grid" x1="0" y1="190" x2="600" y2="190"/>' +
+      '<path class="saw" d="' + saw + '"/>' +
+      '<line class="cmp" x1="0" y1="' + y(c).toFixed(1) + '" x2="600" y2="' + y(c).toFixed(1) + '"/>' +
+      '<path class="sig" d="' + out + '"/>' +
+      '<text x="6" y="' + (top + 14) + '">counter 1023</text><text x="594" text-anchor="end" y="' + (bot + 14) + '">counter 0</text>' +
+      '<text class="annt" x="594" text-anchor="end" y="' + Math.max(14, y(c) - 6).toFixed(1) + '">duty value ' + c + '</text>' +
+      '<text x="6" y="182">output pin: ' + (c > 0 ? 'HIGH while counter &lt; ' + c + ' (' + (c / 1024 * 100).toFixed(0) + '% duty)' : 'always LOW, motor stopped') + '</text>';
+    $('cmpOut').textContent = c;
+  }
+
+  // ----- slow-motion simulator -----
+  var SLOW = 100, WIN = 0.020;          // 100x slow motion, 20 ms of signal on screen
+  var simT = 0, phase = 0, steps = 0, highs = [], open = null, last = null;
+  function shouldRun() {
+    if (state.counter) return false;
+    if (state.mode === 'on') return true;
+    if (state.mode === 'off') return false;
+    return state.pedal;
+  }
+  function tick(now) {
+    if (last === null) last = now;
+    var dt = Math.min(0.1, (now - last) / 1000) / SLOW; last = now;
+    var run = shouldRun(), t0 = simT;
+    simT += dt;
+    if (run) {
+      var ph0 = phase; phase += dt * state.freq;
+      for (var k = Math.floor(ph0) + 1; k <= Math.floor(phase); k++) {
+        var te = t0 + (k - ph0) / state.freq;
+        if (open) { open[1] = Math.min(open[1], te); }
+        open = [te, te + 0.5 / state.freq]; highs.push(open); steps++;
+      }
+    } else if (open) {
+      open[1] = Math.min(open[1], t0); open = null; phase = Math.floor(phase);
+    }
+    while (highs.length && highs[0][1] < simT - WIN) highs.shift();
+    var X = function (t) { return ((t - (simT - WIN)) / WIN * W).toFixed(1); };
+    var d = 'M0,' + LO;
+    highs.forEach(function (h) {
+      var e = Math.min(h[1], simT);
+      d += ' L' + X(h[0]) + ',' + LO + ' L' + X(h[0]) + ',' + HI + ' L' + X(e) + ',' + HI + (h[1] <= simT ? ' L' + X(e) + ',' + LO : '');
+    });
+    var endHigh = highs.length && highs[highs.length - 1][1] > simT;
+    d += ' L' + W + ',' + (endHigh ? HI : LO);
+    $('simScope').innerHTML = GRID + '<path class="sig" d="' + d + '"/><text x="594" y="20" text-anchor="end">now →</text><text x="6" y="20">GPIO 4</text>';
+    $('hand').setAttribute('transform', 'rotate(' + ((steps * 1.8) % 360).toFixed(1) + ' 60 60)');
+    $('stepCount').textContent = steps;
+    var pill = $('motorPill');
+    pill.textContent = run ? 'RUNNING' : 'STOPPED'; pill.className = 'pill ' + (run ? 'on' : 'off');
+    drawStatus(run);
+    requestAnimationFrame(tick);
+  }
+
+  var lastStatus = -1;
+  function drawStatus(run) {
+    var v = (state.pedal ? 1 : 0) | (state.counter ? 2 : 0) | (run ? 4 : 0);
+    if (v === lastStatus) return; lastStatus = v;
+    var names = { 0: 'pedal', 1: 'counter', 2: 'motor' }, html = '';
+    for (var b = 7; b >= 0; b--) {
+      var set = (v >> b) & 1;
+      html += '<div class="bit' + (set ? ' set' : '') + '"><b>' + set + '</b>bit ' + b + '<br>' + (names[b] || 'unused') + '</div>';
+    }
+    $('statusBits').innerHTML = html;
+    $('statusHex').textContent = '0x' + ('0' + v.toString(16).toUpperCase()).slice(-2) + ' = ' + ('0000000' + v.toString(2)).slice(-8);
+  }
+
+  // ----- speed limits and servo -----
+  function drawMax() {
+    var rows = [[1, 'only 50% duty possible'], [4, ''], [8, ''], [10, 'used by this firmware'], [13, '']];
+    var html = '<tr><th>Counter resolution</th><th class="r">Max pulse rate</th><th class="barcell">Log scale</th></tr>';
+    rows.forEach(function (r) {
+      var f = 80e6 / Math.pow(2, r[0]);
+      html += '<tr><td>' + r[0] + ' bit' + (r[1] ? ' <span style="color:var(--muted)">· ' + r[1] + '</span>' : '') + '</td><td class="r">' + fmtHz(f) +
+        '</td><td class="barcell"><div class="bar" style="width:' + (Math.log10(f / 1000) / Math.log10(40e6 / 1000) * 100).toFixed(1) + '%"></div></td></tr>';
+    });
+    html += '<tr><td>Firmware setting today</td><td class="r">1 kHz</td><td class="barcell"><div class="bar" style="width:3px;background:var(--mark)"></div></td></tr>';
+    $('maxTable').innerHTML = html;
+  }
+  function drawServo() {
+    var ppr = Math.max(1, +$('ppr').value || 1), rpm = Math.max(0, +$('rpm').value || 0);
+    var need = ppr * rpm / 60;
+    $('needHz').textContent = fmtHz(need);
+    $('at1k').textContent = fmtRpm(1000 * 60 / ppr);
+    var limits = [
+      ['This firmware as written', 1000],
+      ['BLE frequency field (2 bytes)', 65535],
+      ['ESP32 hardware at 10-bit resolution', 78125],
+      ['Typical servo drive, open-collector input', 200000],
+      ['Typical servo drive, line-driver input', 500000]
+    ];
+    $('servoRows').innerHTML = limits.map(function (l) {
+      var ok = l[1] >= need;
+      return '<tr><td>' + l[0] + '</td><td class="r">' + fmtHz(l[1]) + '</td><td class="r">' + fmtRpm(l[1] * 60 / ppr) +
+        '</td><td class="' + (ok ? 'ok' : 'bad') + '"><strong>' + (ok ? 'yes' : 'no') + '</strong></td></tr>';
+    }).join('');
+    var v = $('servoVerdict');
+    if (need <= 1000) { v.className = 'verdict ok'; v.textContent = 'At these settings the current 1000 Hz limit is enough.'; }
+    else { v.className = 'verdict bad'; v.textContent = 'At these settings the firmware needs ' + fmtHz(need) + ', which is ' + Math.round(need / 1000) + '× its current 1000 Hz limit. Either raise the firmware limit or lower the drive\'s pulses per revolution.'; }
+  }
+
+  function setFreq(f) {
+    state.freq = f;
+    document.querySelectorAll('.freq-in').forEach(function (el) { el.value = f; });
+    document.querySelectorAll('.freq-out').forEach(function (el) { el.textContent = f; });
+    $('overrun').textContent = Math.round(f * 0.05);
+    $('freqBytes').textContent = [f & 255, f >> 8].map(function (b) { return ('0' + b.toString(16).toUpperCase()).slice(-2); }).join(' ');
+    $('freqMath').textContent = '0x' + ('000' + f.toString(16).toUpperCase()).slice(-4) + ' = ' + f;
+    drawRate(); drawDuty();
+  }
+
+  document.querySelectorAll('.freq-in').forEach(function (el) {
+    el.addEventListener('input', function () { setFreq(+el.value); });
+  });
+  $('spr').addEventListener('change', drawRate);
+  $('dutyIn').addEventListener('input', function () { state.duty = +this.value; drawDuty(); });
+  $('cmpIn').addEventListener('input', drawLedc);
+  $('cmpRun').addEventListener('click', function () { $('cmpIn').value = 512; drawLedc(); });
+  $('cmpStop').addEventListener('click', function () { $('cmpIn').value = 0; drawLedc(); });
+
+  var pedal = $('pedal');
+  function setPedal(on) { state.pedal = on; pedal.setAttribute('aria-pressed', on); pedal.textContent = on ? 'Pedal pressed' : 'Hold pedal'; }
+  pedal.addEventListener('pointerdown', function (e) { e.preventDefault(); setPedal(true); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { pedal.addEventListener(ev, function () { setPedal(false); }); });
+  pedal.addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setPedal(true); } });
+  pedal.addEventListener('keyup', function () { setPedal(false); });
+  pedal.addEventListener('blur', function () { setPedal(false); });
+  $('counter').addEventListener('click', function () { state.counter = !state.counter; this.setAttribute('aria-pressed', state.counter); });
+  document.querySelectorAll('.mode').forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.mode = b.dataset.mode;
+      document.querySelectorAll('.mode').forEach(function (o) { o.setAttribute('aria-pressed', o === b); });
+    });
+  });
+  $('ppr').addEventListener('input', drawServo);
+  $('rpm').addEventListener('input', drawServo);
+
+  var ticks = '';
+  for (var i = 0; i < 40; i++) ticks += '<line class="tick" x1="60" y1="8" x2="60" y2="' + (i % 5 ? 12 : 16) + '" transform="rotate(' + i * 9 + ' 60 60)"/>';
+  $('ticks').innerHTML = ticks;
+
+  setFreq(500); drawLedc(); drawMax(); drawServo();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
