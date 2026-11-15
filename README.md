@@ -34,6 +34,7 @@ cp build/merged-binary.bin ../docs/firmware/stepper_ble_controller_esp32s3.bin
 
 - Open it locally: double-click `docs/index.html`; it has no dependencies.
 - Online: <https://adityahpatwardhan.github.io/stepper_ble_controller/> (GitHub Pages, served from the `/docs` folder).
+- Hardware note, `docs/servo-interface.html`: why an ESP32 needs a 5 V buffer chip to drive a servo drive's pulse input, which chip to choose, and how to wire it. Online: <https://adityahpatwardhan.github.io/stepper_ble_controller/servo-interface.html>
 
 ## Features
 

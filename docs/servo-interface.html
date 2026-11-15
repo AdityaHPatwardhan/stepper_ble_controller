@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connecting an ESP32 to a 5 V servo drive</title>
+<meta name="description" content="Why an ESP32 needs a 5 V buffer chip between its pins and a servo drive's pulse input, and how to wire it.">
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #16202b; --muted: #5b6875; --line: #dde2e8;
+  --signal: #0b8f83; --signal-soft: #d6f1ee; --mark: #c26a00; --mark-soft: #fdeed8;
+  --stop: #c0392b; --stop-soft: #fbe3e0; --go: #1e8e4e; --go-soft: #dcf3e5;
+  --code: #eef1f4; --grid: #e9edf1;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1419; --panel: #171e26; --ink: #e6ebf0; --muted: #9aa7b4; --line: #2a343f;
+    --signal: #3fd0c1; --signal-soft: #12332f; --mark: #f0a84a; --mark-soft: #3a2a12;
+    --stop: #ff7b6b; --stop-soft: #3b1b17; --go: #5fd08a; --go-soft: #14311f;
+    --code: #1f2831; --grid: #222c36;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+main, header, nav { max-width: 880px; margin: 0 auto; padding: 0 16px; }
+header { padding-top: 40px; }
+h1 { font-size: clamp(1.7rem, 4.5vw, 2.4rem); line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+h2 { font-size: 1.4rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+h3 { font-size: 1rem; margin: 20px 0 6px; }
+p { margin: 8px 0; }
+.lede { color: var(--muted); font-size: 1.08rem; max-width: 62ch; }
+.num { font-size: .8rem; font-weight: 700; color: var(--signal); letter-spacing: .08em; text-transform: uppercase; }
+nav { margin-top: 20px; }
+nav ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+nav a { display: block; padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px;
+  color: var(--ink); text-decoration: none; font-size: .86rem; background: var(--panel); }
+nav a:hover { border-color: var(--signal); color: var(--signal); }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px; margin: 22px 0; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
+.scope { width: 100%; height: auto; display: block; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; margin: 12px 0 6px; }
+.scope .sig { fill: none; stroke: var(--signal); stroke-width: 2.5; stroke-linejoin: round; }
+.scope .grid { stroke: var(--grid); stroke-width: 1; }
+.scope .ann { stroke: var(--mark); stroke-width: 1.5; fill: none; }
+.scope text { font: 12px ui-monospace, Menlo, Consolas, monospace; fill: var(--muted); }
+.scope text.annt { fill: var(--mark); font-weight: 600; }
+.scope .saw { fill: none; stroke: var(--muted); stroke-width: 2; }
+.scope .cmp { stroke: var(--mark); stroke-width: 2; stroke-dasharray: 6 4; }
+.scope .fillhi { fill: var(--signal-soft); }
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 10px 0; }
+.ctl label { font-weight: 600; font-size: .92rem; }
+input[type=range] { flex: 1 1 220px; min-width: 160px; accent-color: var(--signal); }
+input[type=number], select { font: inherit; padding: 5px 8px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--bg); color: var(--ink); width: 9em; }
+.val { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; min-width: 5.5em; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.stat { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.stat b { display: block; font: 700 1.25rem ui-monospace, Menlo, Consolas, monospace; }
+.stat span { color: var(--muted); font-size: .82rem; }
+.note { border-left: 3px solid var(--mark); background: var(--mark-soft); padding: 9px 13px;
+  border-radius: 0 8px 8px 0; margin: 12px 0; font-size: .94rem; }
+.warn { border-left-color: var(--stop); background: var(--stop-soft); }
+button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+button:hover { border-color: var(--signal); }
+button code { background: transparent; padding: 0; }
+button[aria-pressed=true] { background: var(--signal); border-color: var(--signal); color: #fff; }
+@media (prefers-color-scheme: dark) { button[aria-pressed=true] { color: #06231f; } }
+#pedal { padding: 14px 22px; user-select: none; -webkit-user-select: none; touch-action: none; }
+.sim { display: grid; grid-template-columns: 1fr 150px; gap: 14px; align-items: center; }
+@media (max-width: 600px) { .sim { grid-template-columns: 1fr; } .sim .rotor { max-width: 150px; margin: 0 auto; } }
+.rotor circle.body { fill: var(--bg); stroke: var(--line); stroke-width: 2; }
+.rotor line.hand { stroke: var(--signal); stroke-width: 5; stroke-linecap: round; }
+.rotor .tick { stroke: var(--line); stroke-width: 1; }
+.pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: .85rem; }
+.pill.on { background: var(--go-soft); color: var(--go); }
+.pill.off { background: var(--stop-soft); color: var(--stop); }
+.wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .93rem; margin: 10px 0; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; }
+td.r, th.r { text-align: right; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.bits { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0; }
+.bit { width: 62px; text-align: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px 2px;
+  background: var(--bg); font-size: .7rem; color: var(--muted); }
+.bit b { display: block; font: 700 1.2rem ui-monospace, Menlo, Consolas, monospace; color: var(--ink); }
+.bit.set { background: var(--signal-soft); border-color: var(--signal); }
+.bit.set b { color: var(--signal); }
+.bar { height: 16px; border-radius: 4px; background: var(--signal); min-width: 3px; }
+.barcell { width: 45%; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0; }
+.box { border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--bg);
+  font-size: .88rem; text-align: center; }
+.box b { display: block; }
+.box.core { border-color: var(--signal); background: var(--signal-soft); }
+.arrow { color: var(--muted); font-weight: 700; }
+.verdict { font-weight: 700; }
+.ok { color: var(--go); } .bad { color: var(--stop); }
+footer { max-width: 880px; margin: 0 auto; padding: 8px 16px 48px; color: var(--muted); font-size: .85rem; }
+</style>
+<style>
+.sch { width: 100%; height: auto; display: block; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; margin: 12px 0 6px; }
+.sch text { font: 12px ui-monospace, Menlo, Consolas, monospace; fill: var(--ink); }
+.sch text.dim { fill: var(--muted); }
+.sch text.hd { font-weight: 700; font-size: 13px; }
+.sch .chip { fill: var(--panel); stroke: var(--ink); stroke-width: 1.5; }
+.sch .chip.core { fill: var(--signal-soft); stroke: var(--signal); }
+.sch .w33 { stroke: var(--signal); stroke-width: 2.5; fill: none; }
+.sch .w5 { stroke: var(--mark); stroke-width: 2.5; fill: none; }
+.sch .wg { stroke: var(--muted); stroke-width: 2; fill: none; }
+.sch .part { stroke: var(--ink); stroke-width: 1.5; fill: var(--bg); }
+.sch .dot33 { fill: var(--signal); } .sch .dot5 { fill: var(--mark); } .sch .dotg { fill: var(--muted); }
+.key { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .85rem; color: var(--muted); margin: 4px 0 10px; }
+.key i { display: inline-block; width: 22px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 6px; }
+.k33 { border-color: var(--signal) !important; } .k5 { border-color: var(--mark) !important; } .kg { border-color: var(--muted) !important; }
+.meter { position: relative; height: 22px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; margin: 4px 0 14px; }
+.meter .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px 0 0 5px; }
+.meter .need { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed var(--ink); }
+.meter .lbl { position: absolute; right: 4px; top: 2px; padding: 0 6px; border-radius: 4px; background: var(--bg); line-height: 16px; font: 700 .82rem/16px ui-monospace, Menlo, Consolas, monospace; }
+.fill.good { background: var(--go); } .fill.poor { background: var(--stop); }
+.pins { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+@media (max-width: 600px) { .pins { grid-template-columns: 1fr; } }
+.pin { border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; background: var(--bg); }
+.pin h3 { margin: 0 0 6px; }
+.pin.p5 { border-color: var(--mark); } .pin.p33 { border-color: var(--signal); }
+.pin ul { margin: 6px 0 0; padding-left: 18px; } .pin li { margin: 3px 0; }
+.back { display: inline-block; margin-top: 14px; color: var(--signal); text-decoration: none; font-weight: 600; font-size: .9rem; }
+ol.steps { padding-left: 20px; } ol.steps li { margin: 8px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="num">Stepper BLE Controller · hardware note</div>
+  <h1>Connecting an ESP32 to a 5 V servo drive</h1>
+  <p class="lede">The ESP32's signal pins work at 3.3 V. A servo drive's pulse input expects 5 V. A small buffer chip between them fixes the mismatch. This page shows why it is needed, what it costs, and how to wire it.</p>
+  <a class="back" href="./">← Back to the main explainer</a>
+</header>
+
+<nav aria-label="Sections">
+  <ol>
+    <li><a href="#pins">1 Two kinds of pin</a></li>
+    <li><a href="#why">2 Why 3.3 V falls short</a></li>
+    <li><a href="#fix">3 The buffer</a></li>
+    <li><a href="#levels">4 Which chip family</a></li>
+    <li><a href="#cost">5 What it costs</a></li>
+    <li><a href="#wiring">6 Wiring</a></li>
+    <li><a href="#boot">7 Power-up</a></li>
+    <li><a href="#back">8 Signals coming back</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="pins">
+  <div class="num">1 · Two kinds of pin</div>
+  <h2>The board has a 5 V pin, but it is not a signal</h2>
+  <p>An ESP32-S3 development board carries both voltages. They do different jobs.</p>
+  <div class="pins">
+    <div class="pin p5">
+      <h3>The 5 V pin: power</h3>
+      <ul>
+        <li>It is the USB supply passed straight through.</li>
+        <li>It is always on. The firmware cannot switch it.</li>
+        <li>Use it to <strong>power</strong> the buffer chip.</li>
+      </ul>
+    </div>
+    <div class="pin p33">
+      <h3>The GPIO pins: signals</h3>
+      <ul>
+        <li>These are the pins the firmware can pulse.</li>
+        <li>They swing between 0 V and <strong>3.3 V</strong>, because the chip itself runs on 3.3 V.</li>
+        <li>They must never receive 5 V. It can damage the chip.</li>
+      </ul>
+    </div>
+  </div>
+  <p>So the pulses that leave the ESP32 are always 3.3 V pulses, whatever the board's 5 V pin offers.</p>
+</section>
+
+<section id="why">
+  <div class="num">2 · Why 3.3 V falls short</div>
+  <h2>The drive's input is a small light, and it needs enough current</h2>
+  <p>Most servo drives receive the pulse through an opto-isolator: a tiny LED inside the drive that shines on a sensor. The LED sits behind a resistor chosen for a 5 V signal. Feed it 3.3 V and less current flows, so the LED is dimmer and the drive may miss pulses.</p>
+  <div class="ctl">
+    <label for="rIn">Input resistor (Ω)</label><input type="number" id="rIn" min="50" max="2000" step="10" value="220">
+    <label for="vfIn">LED voltage (V)</label><input type="number" id="vfIn" min="0.8" max="2.5" step="0.1" value="1.5">
+    <label for="needIn">Current needed (mA)</label><input type="number" id="needIn" min="1" max="30" step="1" value="10">
+  </div>
+  <p style="margin-bottom:2px"><strong>Straight from an ESP32 pin, 3.3 V</strong></p>
+  <div class="meter"><div class="fill" id="m33"></div><div class="need" id="n33"></div><span class="lbl" id="l33"></span></div>
+  <p style="margin-bottom:2px"><strong>Through a buffer, 5 V</strong></p>
+  <div class="meter"><div class="fill" id="m5"></div><div class="need" id="n5"></div><span class="lbl" id="l5"></span></div>
+  <p style="color:var(--muted);font-size:.85rem;margin-top:-6px">The dashed line marks the current the drive needs.</p>
+  <p id="optoVerdict" class="verdict"></p>
+  <div class="note"><strong>current = (signal voltage − LED voltage) ÷ resistor.</strong> The three numbers above are example values. The real ones are in the drive's manual, in the section on the pulse (or "position command") input. Some drives do work from 3.3 V; the manual's minimum input current tells you.</div>
+</section>
+
+<section id="fix">
+  <div class="num">3 · The buffer</div>
+  <h2>A buffer copies the signal at a higher voltage</h2>
+  <p>A buffer chip has inputs and outputs. Whatever logic level arrives at an input, it repeats on the matching output, using its own supply voltage. Power it from 5 V, feed it 3.3 V pulses, and it produces the same pulses at 5 V.</p>
+  <div class="flow" role="img" aria-label="ESP32 pin at 3.3 volts feeds a buffer powered from 5 volts, which feeds the servo drive at 5 volts">
+    <div class="box core"><b>ESP32 GPIO</b>3.3 V pulses</div>
+    <span class="arrow">→</span>
+    <div class="box"><b>Buffer chip</b>powered from the 5 V pin</div>
+    <span class="arrow">→</span>
+    <div class="box"><b>Servo drive input</b>5 V pulses</div>
+  </div>
+  <p>One chip has four to eight channels, so a single chip carries the pulse and direction signals for all three axes.</p>
+</section>
+
+<section id="levels">
+  <div class="num">4 · Which chip family</div>
+  <h2>The buffer must accept 3.3 V as a clear "high"</h2>
+  <p>Not every 5 V buffer understands a 3.3 V input. Each chip family has a threshold: the lowest voltage it is guaranteed to read as HIGH. The ESP32's HIGH must sit above that threshold.</p>
+  <svg class="scope" id="ladder" viewBox="0 0 600 280" role="img" aria-label="Voltage chart comparing the ESP32 output level with the input thresholds of 74HC and 74HCT chips"></svg>
+  <div class="wrap">
+  <table>
+    <tr><th>Chip family</th><th class="r">Reads HIGH from</th><th class="r">Output current</th><th>Verdict with a 3.3 V ESP32</th></tr>
+    <tr><td>74HC (for example 74HC244)</td><td class="r">3.5 V</td><td class="r">about 6 mA</td><td class="bad"><strong>Do not use.</strong> 3.3 V is below its threshold.</td></tr>
+    <tr><td>74HCT (74HCT244, 74HCT125)</td><td class="r">2.0 V</td><td class="r">about 6 mA</td><td class="ok"><strong>Works</strong> for inputs needing a few mA.</td></tr>
+    <tr><td>74AHCT (74AHCT125)</td><td class="r">2.0 V</td><td class="r">about 8 mA</td><td class="ok"><strong>Works.</strong></td></tr>
+    <tr><td>74ACT (74ACT244)</td><td class="r">2.0 V</td><td class="r">about 24 mA</td><td class="ok"><strong>Best single-wire choice</strong> for opto inputs that need 10 mA or more.</td></tr>
+    <tr><td>AM26C31 line driver</td><td class="r">2.0 V</td><td class="r">about 20 mA</td><td class="ok"><strong>Best overall.</strong> Sends each signal on a wire pair (see section 6).</td></tr>
+  </table>
+  </div>
+  <div class="note">The letter <strong>T</strong> in HCT, AHCT and ACT is what matters: it marks the versions built to accept lower-voltage inputs. Check the output current against what section 2 says the drive needs. Figures are typical datasheet values at a 5 V supply; confirm them for the exact part you buy.</div>
+</section>
+
+<section id="cost">
+  <div class="num">5 · What it costs</div>
+  <h2>Speed and power: nothing you could measure on the machine</h2>
+  <p>The buffer delays every pulse by the same tiny amount, roughly 10 nanoseconds. Compare that with how long one pulse lasts.</p>
+  <div class="ctl">
+    <label for="fIn">Pulse rate</label>
+    <input type="range" id="fIn" min="1" max="200" step="1" value="40">
+    <span class="val"><span id="fOut">40</span> kHz</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="cPeriod">25,000 ns</b><span>length of one pulse period</span></div>
+    <div class="stat"><b>~10 ns</b><span>buffer delay</span></div>
+    <div class="stat"><b id="cRatio">0.04 %</b><span>delay as a share of one period</span></div>
+  </div>
+  <svg class="scope" id="delayScope" viewBox="0 0 600 170" role="img" aria-label="Input and output waveforms of the buffer, drawn to scale"></svg>
+  <p style="color:var(--muted);font-size:.85rem;margin-top:0">Both traces are drawn to scale. The output is shifted right by 10 ns, which is too small to see.</p>
+  <table>
+    <tr><th>Concern</th><th>Effect of the buffer</th></tr>
+    <tr><td>Lost or shifted steps</td><td>None. Every pulse gets the same delay, so the count and spacing are unchanged.</td></tr>
+    <tr><td>Power</td><td>A few milliamps from the 5 V pin.</td></tr>
+    <tr><td>Reliability</td><td>Better. The drive receives a full 5 V signal instead of one near its limit, so motor noise is less likely to corrupt it.</td></tr>
+    <tr><td>Extra failure point</td><td>One more chip and its solder joints. The wiring rules below keep it dependable.</td></tr>
+  </table>
+</section>
+
+<section id="wiring">
+  <div class="num">6 · Wiring</div>
+  <h2>One channel, drawn out</h2>
+  <p>This shows the pulse signal for one axis. The direction signal, and the other axes, repeat the same pattern on the chip's other channels.</p>
+  <svg class="sch" viewBox="0 0 720 330" role="img" aria-label="Wiring diagram: ESP32 5 volt pin powers the buffer, a GPIO pin feeds the buffer input with a pull-down resistor, and the buffer output feeds the servo drive pulse input">
+    <!-- ESP32 -->
+    <rect class="chip core" x="20" y="40" width="130" height="250" rx="8"/>
+    <text class="hd" x="85" y="62" text-anchor="middle">ESP32-S3</text>
+    <text x="140" y="104" text-anchor="end">5V</text>
+    <text x="140" y="174" text-anchor="end">GPIO 4</text>
+    <text x="140" y="264" text-anchor="end">GND</text>
+    <!-- buffer -->
+    <rect class="chip" x="300" y="70" width="130" height="160" rx="8"/>
+    <text class="hd" x="365" y="92" text-anchor="middle">Buffer</text>
+    <text class="dim" x="365" y="108" text-anchor="middle">74ACT244</text>
+    <text x="310" y="134">VCC</text>
+    <text x="310" y="174">A in</text>
+    <text x="420" y="174" text-anchor="end">Y out</text>
+    <text x="310" y="214">OE, GND</text>
+    <!-- drive -->
+    <rect class="chip" x="570" y="110" width="130" height="150" rx="8"/>
+    <text class="hd" x="635" y="132" text-anchor="middle">Servo drive</text>
+    <text x="580" y="174">PULS+</text>
+    <text x="580" y="234">PULS−</text>
+    <!-- 5V rail -->
+    <path class="w5" d="M150,100 L250,100 L250,130 L300,130"/>
+    <circle class="dot5" cx="250" cy="100" r="4"/>
+    <!-- decoupling cap -->
+    <path class="w5" d="M250,100 L250,40 L480,40 L480,60"/>
+    <path class="part" d="M468,60 L492,60 M468,68 L492,68" />
+    <path class="wg" d="M480,68 L480,260"/>
+    <text class="dim" x="498" y="68">100 nF</text>
+    <!-- signal 3.3 -->
+    <path class="w33" d="M150,170 L300,170"/>
+    <circle class="dot33" cx="215" cy="170" r="4"/>
+    <!-- pull-down -->
+    <path class="w33" d="M215,170 L215,190"/>
+    <rect class="part" x="207" y="190" width="16" height="40" rx="2"/>
+    <path class="wg" d="M215,230 L215,260"/>
+    <text class="dim" x="229" y="214">10 kΩ</text>
+    <!-- output 5V signal -->
+    <path class="w5" d="M430,170 L570,170"/>
+    <text class="dim" x="490" y="190">5 V pulses</text>
+    <text class="dim" x="225" y="162" text-anchor="middle">3.3 V pulses</text>
+    <!-- ground rail -->
+    <path class="wg" d="M150,260 L540,260 L540,230 L570,230"/>
+    <path class="wg" d="M365,230 L365,260"/>
+    <circle class="dotg" cx="215" cy="260" r="4"/><circle class="dotg" cx="365" cy="260" r="4"/><circle class="dotg" cx="480" cy="260" r="4"/>
+    <text class="dim" x="345" y="282" text-anchor="middle">shared ground</text>
+  </svg>
+  <div class="key"><span><i class="k33"></i>3.3 V signal</span><span><i class="k5"></i>5 V power and 5 V signal</span><span><i class="kg"></i>ground</span></div>
+  <ol class="steps">
+    <li><strong>Power the buffer from the 5 V pin</strong> and join its ground to the ESP32's ground. Without a shared ground the two sides have no common reference and the signal is meaningless.</li>
+    <li><strong>Fit a 10 kΩ pull-down resistor</strong> from each buffer input to ground. Section 7 explains why.</li>
+    <li><strong>Fit a 100 nF capacitor</strong> between the buffer's VCC and ground pins, as close to the chip as possible. It absorbs the small current spikes the chip makes when it switches.</li>
+    <li><strong>Tie the output-enable pin (OE) to ground</strong> so the outputs are always active, and tie any unused inputs to ground so they do not float.</li>
+    <li><strong>Keep the wires to the drive short</strong>, and run each signal twisted together with its ground return, away from the motor power cables.</li>
+  </ol>
+  <h3>Which way round at the drive</h3>
+  <p>The diagram drives PULS+ from the buffer and returns PULS− to ground, so the input LED lights when the buffer output is HIGH. Some drives are documented the other way: PULS+ to 5 V and PULS− to the signal, so the LED lights on LOW. Both work with this buffer; follow the drive's manual, and set the drive's pulse-polarity parameter to match.</p>
+  <h3>The better option: a wire pair per signal</h3>
+  <p>Drives usually label their fast 5 V inputs "line driver" inputs. They are designed for a differential signal: two wires that always carry opposite levels. Noise picked up along the cable hits both wires equally and cancels out. An AM26C31 chip, powered from 5 V, converts each ESP32 pin into such a pair. For a machine with three servo drives and long cables this is the more robust choice, and it is what lets the drive accept its highest pulse rates.</p>
+</section>
+
+<section id="boot">
+  <div class="num">7 · Power-up</div>
+  <h2>Why the pull-down resistors matter</h2>
+  <p>For a short time after power-on or reset, the ESP32's firmware is not running yet and its pins are not driven. An undriven wire "floats": it drifts and picks up noise. The buffer faithfully amplifies that noise into 5 V pulses, and the drive may move the motor.</p>
+  <svg class="scope" id="bootScope" viewBox="0 0 600 200" role="img" aria-label="Buffer input during power-up, with and without a pull-down resistor"></svg>
+  <p>A pull-down resistor holds the wire at 0 V whenever nothing else is driving it. Once the firmware starts, the pin easily overrides the resistor.</p>
+  <div class="note">Also keep the drives' <strong>servo-on (enable)</strong> signal off until the firmware has started and homed the machine. Then stray pulses during power-up cannot cause motion even if they occur.</div>
+</section>
+
+<section id="back">
+  <div class="num">8 · Signals coming back</div>
+  <h2>The other direction needs protection too</h2>
+  <p>The buffer only carries signals out of the ESP32. Signals coming in, such as a drive's alarm or in-position output, or a limit switch, are usually 24 V on an industrial machine. They must not reach an ESP32 pin directly.</p>
+  <table>
+    <tr><th>Incoming signal</th><th>How to bring it in safely</th></tr>
+    <tr><td>Drive alarm, ready, in-position outputs</td><td>Through an opto-isolator module: 24 V on one side, a 3.3 V signal on the ESP32 side.</td></tr>
+    <tr><td>Limit and home switches</td><td>The same opto-isolator modules, or switches wired to 3.3 V only, with short shielded cable.</td></tr>
+    <tr><td>Emergency stop</td><td>Wired directly to the drives and spindle power. The ESP32 may read it, but must not be the thing that enforces it.</td></tr>
+  </table>
+  <p>The buffer itself does not isolate the ESP32 from the drive. The drive's opto-isolated input does that job. Confirm in the manual that the pulse inputs are opto-isolated.</p>
+  <div class="note warn">Every voltage, current and threshold on this page is a typical value. Before wiring, read the pulse-input section of the manual for the actual servo drive and the datasheet of the actual buffer chip.</div>
+</section>
+
+</main>
+<footer>Stepper BLE Controller · <a href="./" style="color:inherit">main explainer</a></footer>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---- section 2: opto input current ----
+  function drawOpto() {
+    var R = Math.max(1, +$('rIn').value || 1), vf = +$('vfIn').value || 0, need = Math.max(0.1, +$('needIn').value || 0.1);
+    var i33 = Math.max(0, (3.3 - vf) / R * 1000), i5 = Math.max(0, (5 - vf) / R * 1000);
+    var scale = Math.max(i5, need) * 1.15;
+    [['33', i33], ['5', i5]].forEach(function (p) {
+      var ok = p[1] >= need;
+      $('m' + p[0]).style.width = Math.min(100, p[1] / scale * 100) + '%';
+      $('m' + p[0]).className = 'fill ' + (ok ? 'good' : 'poor');
+      $('n' + p[0]).style.left = (need / scale * 100) + '%';
+      $('l' + p[0]).textContent = p[1].toFixed(1) + ' mA ' + (ok ? '· enough' : '· too little');
+    });
+    var v = $('optoVerdict');
+    if (i33 >= need) { v.className = 'verdict ok'; v.textContent = 'With these values the drive would work from 3.3 V directly, with ' + (i33 / need).toFixed(1) + '× the needed current. A buffer still adds margin.'; }
+    else if (i5 >= need) { v.className = 'verdict bad'; v.textContent = 'With these values 3.3 V gives only ' + Math.round(i33 / need * 100) + '% of the current the drive needs. Through a 5 V buffer it gets ' + Math.round(i5 / need * 100) + '%.'; }
+    else { v.className = 'verdict bad'; v.textContent = 'With these values even 5 V is not enough. Recheck the numbers against the drive manual.'; }
+  }
+  ['rIn', 'vfIn', 'needIn'].forEach(function (id) { $(id).addEventListener('input', drawOpto); });
+
+  // ---- section 4: threshold ladder ----
+  function drawLadder() {
+    var y = function (v) { return 240 - v * 40; }, s = '';
+    for (var v = 0; v <= 5; v++) s += '<line class="grid" x1="50" y1="' + y(v) + '" x2="590" y2="' + y(v) + '"/><text x="42" y="' + (y(v) + 4) + '" text-anchor="end">' + v + ' V</text>';
+    var col = function (x, lo, hi, cls, title, sub) {
+      return '<rect x="' + x + '" y="' + y(hi) + '" width="130" height="' + (y(lo) - y(hi)) + '" rx="4" style="fill:var(--' + cls + '-soft);stroke:var(--' + cls + ')" stroke-width="1.5"/>' +
+        '<text x="' + (x + 65) + '" y="268" text-anchor="middle" style="fill:var(--ink);font-weight:700">' + title + '</text>' +
+        '<text x="' + (x + 65) + '" y="' + (y(hi) - 6) + '" text-anchor="middle">' + sub + '</text>';
+    };
+    s += col(70, 2.64, 3.3, 'signal', 'ESP32 HIGH', '2.64 to 3.3 V');
+    s += col(250, 3.5, 5, 'stop', '74HC accepts', '3.5 V and up');
+    s += col(430, 2.0, 5, 'go', '74HCT / ACT accepts', '2.0 V and up');
+    s += '<line class="cmp" x1="50" y1="' + y(3.3) + '" x2="590" y2="' + y(3.3) + '"/><line class="cmp" x1="50" y1="' + y(2.64) + '" x2="590" y2="' + y(2.64) + '"/>';
+    $('ladder').innerHTML = s;
+  }
+
+  // ---- section 5: delay ----
+  function drawDelay() {
+    var k = +$('fIn').value, period = 1e6 / k, HI1 = 30, LO1 = 70, HI2 = 105, LO2 = 145, P = 300;
+    var path = function (hi, lo, dx) {
+      var d = 'M0,' + lo;
+      for (var x = dx; x < 600; x += P) d += ' L' + x.toFixed(2) + ',' + lo + ' L' + x.toFixed(2) + ',' + hi + ' L' + (x + P / 2).toFixed(2) + ',' + hi + ' L' + (x + P / 2).toFixed(2) + ',' + lo;
+      return d + ' L600,' + lo;
+    };
+    var dx = 10 / period * P;
+    $('delayScope').innerHTML =
+      '<path class="sig" d="' + path(HI1, LO1, 40) + '"/><path class="sig" style="stroke:var(--mark)" d="' + path(HI2, LO2, 40 + dx) + '"/>' +
+      '<text x="6" y="20">buffer input, 3.3 V</text><text x="6" y="98">buffer output, 5 V</text>' +
+      '<text x="594" y="164" text-anchor="end">2 periods shown</text>';
+    $('fOut').textContent = k;
+    $('cPeriod').textContent = Math.round(period).toLocaleString('en-US') + ' ns';
+    var r = 10 / period * 100;
+    $('cRatio').textContent = (r < 0.1 ? r.toFixed(3) : r.toFixed(2)) + ' %';
+  }
+  $('fIn').addEventListener('input', drawDelay);
+
+  // ---- section 7: floating input ----
+  function drawBoot() {
+    var seed = 7, rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    var noisy = 'M0,60', x;
+    for (x = 0; x <= 300; x += 6) noisy += ' L' + x + ',' + (22 + rnd() * 44).toFixed(1);
+    var run = function (x0, hi, lo) { var d = ''; for (var x = x0; x < 600; x += 40) d += ' L' + x + ',' + lo + ' L' + x + ',' + hi + ' L' + (x + 20) + ',' + hi + ' L' + (x + 20) + ',' + lo; return d + ' L600,' + lo; };
+    $('bootScope').innerHTML =
+      '<line class="ann" x1="300" y1="8" x2="300" y2="192" stroke-dasharray="4 4"/>' +
+      '<text class="annt" x="294" y="196" text-anchor="end">booting, pins not driven</text><text class="annt" x="306" y="196">firmware running</text>' +
+      '<path class="sig" style="stroke:var(--stop)" d="' + noisy + ' L300,66' + run(320, 22, 66) + '"/>' +
+      '<path class="sig" d="M0,160 L300,160' + run(320, 116, 160) + '"/>' +
+      '<text x="6" y="14">without pull-down: input floats, stray pulses</text><text x="6" y="108">with pull-down: input held at 0 V</text>';
+  }
+
+  drawOpto(); drawLadder(); drawDelay(); drawBoot();
+})();
+</script>
+</body>
+</html>

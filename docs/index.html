@@ -109,6 +109,7 @@ footer { max-width: 880px; margin: 0 auto; padding: 8px 16px 48px; color: var(--
   <div class="num">Stepper BLE Controller</div>
   <h1>How a foot pedal, an ESP32 and a phone turn a motor</h1>
   <p class="lede">An ESP32 sends a stream of electrical pulses to a motor driver. Each pulse moves the motor one small step. This page shows what those pulses look like, what "pulse rate" and "duty cycle" mean, and how the firmware decides when to send them.</p>
+  <p style="font-size:.92rem">Related hardware note: <a href="servo-interface.html" style="color:var(--signal);font-weight:600">Connecting an ESP32 to a 5 V servo drive →</a></p>
 </header>
 
 <nav aria-label="Sections">
@@ -354,6 +355,7 @@ footer { max-width: 880px; margin: 0 auto; padding: 8px 16px 48px; color: var(--
     <tr><td>Acceleration ramp</td><td>The firmware jumps straight to full pulse rate. A servo commanded this way can trip a "position error too large" alarm, unless the drive's own command smoothing is switched on.</td></tr>
     <tr><td>Alarm and ready signals</td><td>The firmware does not read the drive's alarm output, so it would keep pulsing into a faulted drive.</td></tr>
   </table>
+  <p>The signal-level row is explained in full, with a wiring diagram, in <a href="servo-interface.html" style="color:var(--signal);font-weight:600">Connecting an ESP32 to a 5 V servo drive</a>.</p>
   <div class="note">The drive limits in the table are typical values for common industrial drives, not figures for a specific model. Confirm the control mode, the pulses per revolution and the maximum input frequency in the manual of the actual drive.</div>
 </section>
 
